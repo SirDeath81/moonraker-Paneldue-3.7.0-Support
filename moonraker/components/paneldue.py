@@ -39,6 +39,7 @@ INITIALIZE_TIMEOUT = 10.
 class PanelDueError(ServerError):
     pass
 
+
 RESTART_GCODES = ["RESTART", "FIRMWARE_RESTART"]
 
 # Matches exactly "extruder", "extruder1", "extruder2", ... - not things like
@@ -117,7 +118,7 @@ class PanelDue:
             "RESTART": "RESTART",
             "FIRMWARE_RESTART": "FIRMWARE_RESTART"
         }
-        
+
         macros = config.getlist('macros', None)
         if macros is not None:
             self.available_macros = {m.split()[0]: m for m in macros if m.strip()}
@@ -143,10 +144,14 @@ class PanelDue:
         self.ser_conn = async_serial.AsyncSerialConnection.from_config(config)
 
         # Register server event handlers
-        self.server.register_event_handler("server:klippy_ready", self._process_klippy_ready)
-        self.server.register_event_handler("server:klippy_shutdown", self._process_klippy_shutdown)
-        self.server.register_event_handler("server:klippy_disconnect", self._process_klippy_disconnect)
-        self.server.register_event_handler("server:gcode_response", self.handle_gcode_response)
+        self.server.register_event_handler(
+            "server:klippy_ready", self._process_klippy_ready)
+        self.server.register_event_handler(
+            "server:klippy_shutdown", self._process_klippy_shutdown)
+        self.server.register_event_handler(
+            "server:klippy_disconnect", self._process_klippy_disconnect)
+        self.server.register_event_handler(
+            "server:gcode_response", self.handle_gcode_response)
         self.server.register_remote_method("paneldue_beep", self.paneldue_beep)
 
         # Map directly handled G-codes to their respective callbacks
@@ -189,7 +194,8 @@ class PanelDue:
         return xor
 
     def calc_crc16(self, payload: str) -> int:
-        """Calculates CRC16-CCITT (Poly 0x1021, Init 0x0000) for modern PanelDue protocols."""
+        """Calculates CRC16-CCITT (Poly 0x1021, Init 0x0000) for modern
+        PanelDue protocols."""
         crc = 0x0000
         for char in payload:
             crc ^= (ord(char) << 8)
@@ -233,12 +239,14 @@ class PanelDue:
             self.initialized = False
 
     async def component_init(self) -> None:
-        """Initializes the background serial connection task via Moonraker server loop."""
+        """Initializes the background serial connection task via Moonraker
+        server loop."""
         self.serial_task = self.event_loop.create_task(self.run_serial())
 
 #Teil 2
     async def _process_klippy_ready(self) -> None:
-        """Handles Klippy initialization and subscribes to required printer object states."""
+        """Handles Klippy initialization and subscribes to required printer
+        object states."""
         retries = 10
         printer_info: Dict[str, Any] = {}
         cfg_status: Dict[str, Any] = {}
@@ -340,11 +348,12 @@ class PanelDue:
 
 #Teil 3
     def process_line(self, line: str) -> None:
-        """Processes raw lines from serial, parsing line numbers and auto-detecting variant protocols."""
+        """Processes raw lines from serial, parsing line numbers and
+        auto-detecting variant protocols."""
         if self.verbose_logging:
             logging.info(f"PanelDue RAW INPUT: {line.strip()}")
         self.debug_queue.append(line)
-        
+
         if "M112" in line.upper():
             self.event_loop.register_callback(self.klippy_apis.emergency_stop)
             return
@@ -377,8 +386,10 @@ class PanelDue:
             script = line[line_index+1:cs_index].strip()
 
             # Checksum validation cascade: two supported variants only.
-            #  - VARIANT_1_LEGACY: PanelDue firmware 1.x, M408 polling, XOR8 checksum
-            #  - VARIANT_4_MODERN: PanelDue firmware 3.7.0+, M409 object-model queries, CRC16 checksum
+            #  - VARIANT_1_LEGACY: PanelDue firmware 1.x, M408 polling,
+            #    XOR8 checksum
+            #  - VARIANT_4_MODERN: PanelDue firmware 3.7.0+, M409
+            #    object-model queries, CRC16 checksum
             variant = "UNKNOWN"
             if "M409" in payload:
                 if self.calc_crc16(payload) == received_checksum:
@@ -387,12 +398,17 @@ class PanelDue:
                 if self.calc_xor8(payload) == received_checksum:
                     variant = "VARIANT_1_LEGACY"
             else:
-                # Generic G-code: validate against whichever protocol was already detected
+                # Generic G-code: validate against whichever protocol was
+                # already detected
                 if self.detected_variant == "VARIANT_4_MODERN":
                     if self.calc_crc16(payload) == received_checksum:
                         variant = "VARIANT_4_MODERN"
                 elif self.calc_xor8(payload) == received_checksum:
-                    variant = self.detected_variant if self.detected_variant != "UNKNOWN" else "VARIANT_1_LEGACY"
+                    variant = (
+                        self.detected_variant
+                        if self.detected_variant != "UNKNOWN"
+                        else "VARIANT_1_LEGACY"
+                    )
 
             if variant != "UNKNOWN" and variant != self.detected_variant:
                 self.detected_variant = variant
@@ -409,7 +425,10 @@ class PanelDue:
         if "M409" in script.upper():
             if self.detected_variant == "UNKNOWN":
                 self.detected_variant = "VARIANT_4_MODERN"
-                logging.info("PanelDue: Fallback to VARIANT_4_MODERN for early M409 processing")
+                logging.info(
+                    "PanelDue: Fallback to VARIANT_4_MODERN for early "
+                    "M409 processing"
+                )
 
             import re
             # Extract K parameter value inside quotes or as raw word.
@@ -424,13 +443,14 @@ class PanelDue:
             f_match = re.search(r'[fF]\s*"?([a-zA-Z0-9_\-]+)"?', script)
             if f_match:
                 arg_f = f_match.group(1).strip()
-                
+
             self._run_paneldue_M409(arg_k=arg_k, arg_f=arg_f)
             return
 
         # Traditional command routing processing continues for M408 and standard Gcodes.
         # RRF/PanelDue allows several G/M-codes chained on one line, separated by spaces
-        # (this is how the jog/move buttons send "G91 G1 Z50 F6000 G90" as a single line).
+        # (this is how the jog/move buttons send "G91 G1 Z50 F6000 G90" as a
+        # single line).
         # Klipper only ever executes the first command on a line, so split any chained
         # line into individual commands before dispatching each one in order.
         for sub_script in self._split_chained_commands(script):
@@ -468,7 +488,7 @@ class PanelDue:
         parts = script.split()
         if not parts:
             return
-            
+
         cmd = parts[0].strip()
         if cmd in ["M23", "M30", "M32", "M36", "M37", "M98"]:
             arg = script[len(cmd):].strip()
@@ -499,7 +519,7 @@ class PanelDue:
                     logging.exception(msg)
                     return
                 params[f"arg_{arg}"] = val
-            
+
             func = self.direct_gcodes[cmd]
             self.queue_command(func, **params)
             return
@@ -591,7 +611,8 @@ class PanelDue:
                 # survives a plain Moonraker restart (it's Klipper's state,
                 # not ours) - though not a full FIRMWARE_RESTART, which
                 # reinitializes Klipper's objects including this one.
-                last_name = self.printer_state.get('print_stats', {}).get('filename', '')
+                last_name = self.printer_state.get(
+                    'print_stats', {}).get('filename', '')
             if not last_name:
                 raise PanelDueError("No previous file to print again")
             raw_arg = raw_arg.replace("{job.lastFileName}", last_name)
@@ -672,10 +693,12 @@ class PanelDue:
         return f"SET_GCODE_OFFSET Z_ADJUST={offset} MOVE=1"
 
     def _prepare_G10(self, args: List[str]) -> str:
-        """Translates RRF tool-heater set (G10 P<tool> S<active> R<standby>) to Klipper's M104.
+        """Translates RRF tool-heater set (G10 P<tool> S<active> R<standby>)
+        to Klipper's M104.
 
-        RRF keeps separate active/standby setpoints per tool; Klipper only has a single
-        target per heater, so S (active) wins when both are given, and R (standby) is used
+        RRF keeps separate active/standby setpoints per tool; Klipper only
+        has a single target per heater, so S (active) wins when both are
+        given, and R (standby) is used
         as a fallback so the standby button on the panel still does something sensible.
         """
         tool_index: Optional[int] = None
@@ -699,7 +722,8 @@ class PanelDue:
 
         if tool_index is None:
             # No explicit tool index (P) - fall back to the currently active extruder.
-            extruder_name = self.printer_state.get('toolhead', {}).get('extruder', 'extruder')
+            extruder_name = self.printer_state.get(
+                'toolhead', {}).get('extruder', 'extruder')
             tool_index = self._extruder_index(extruder_name) if extruder_name else 0
 
         temp = active if active is not None else standby
@@ -708,10 +732,12 @@ class PanelDue:
         return f"M104 T{tool_index} S{temp}"
 
     def _prepare_M140(self, args: List[str]) -> str:
-        """Translates RRF bed-heater set (M140 P<bed> S<active> R<standby>) into a Klipper M140.
+        """Translates RRF bed-heater set (M140 P<bed> S<active> R<standby>)
+        into a Klipper M140.
 
-        Klipper's M140 defaults S to 0 when omitted, so forwarding a bare "M140 P0 R25"
-        (the panel's standby button) unmodified turns the bed heater off. Fold S/R into a
+        Klipper's M140 defaults S to 0 when omitted, so forwarding a bare
+        "M140 P0 R25" (the panel's standby button) unmodified turns the bed
+        heater off. Fold S/R into a
         single S value instead, same reasoning as _prepare_G10 above.
         """
         active: Optional[float] = None
@@ -816,7 +842,10 @@ class PanelDue:
         self.mbox_sequence += 1
         self.confirmed_gcode = gcode
         self.confirmed_macro_name = name
-        msg = f"Please confirm your intent to run {name}. Press OK to continue, or CANCEL to abort."
+        msg = (
+            f"Please confirm your intent to run {name}. "
+            "Press OK to continue, or CANCEL to abort."
+        )
         if self.detected_variant == "VARIANT_4_MODERN":
             self.pending_msgbox = {
                 'mode': 3,
@@ -852,7 +881,8 @@ class PanelDue:
                     return
 
     def write_response(self, response: Any, line_no: Optional[int] = None) -> None:
-        """Calculates checksum, formats the packet with line number, and sends it to UART."""
+        """Calculates checksum, formats the packet with line number, and
+        sends it to UART."""
         try:
             # Generate compact JSON payload without spaces
             serialized = jsonw.dumps(response).decode('utf-8')
@@ -957,14 +987,17 @@ class PanelDue:
                 print_duration = print_stats.get('print_duration', 0.0)
                 est_time: float = self.file_metadata.get('estimated_time', 0.0)
                 if est_time > MIN_EST_TIME:
-                    times_left_file = float(max(0, int(est_time - est_time * progress)))
+                    times_left_file = float(
+                        max(0, int(est_time - est_time * progress)))
                     est_total_fil = self.file_metadata.get('filament_total')
                     if est_total_fil:
                         cur_filament: float = print_stats.get('filament_used', 0.0)
                         fpct = min(1.0, cur_filament / est_total_fil)
-                        times_left_filament = float(max(0, int(est_time - est_time * fpct)))
+                        times_left_filament = float(
+                            max(0, int(est_time - est_time * fpct)))
                 else:
-                    times_left_file = float(max(0, int(print_duration / progress - print_duration)))
+                    times_left_file = float(
+                        max(0, int(print_duration / progress - print_duration)))
 
         return {"file": times_left_file, "filament": times_left_filament}
 
@@ -973,9 +1006,13 @@ class PanelDue:
                            arg_p: bool = False,
                            arg_f: Optional[str] = None
                            ) -> None:
-        """Responds to modern M409 tree discovery queries matching full RRF specifications."""
+        """Responds to modern M409 tree discovery queries matching full
+        RRF specifications."""
         if self.verbose_logging:
-            logging.info(f"PanelDue DEBUG: M409 entry point. K='{arg_k}', P={arg_p}, F='{arg_f}'")
+            logging.info(
+                f"PanelDue DEBUG: M409 entry point. K='{arg_k}', "
+                f"P={arg_p}, F='{arg_f}'"
+            )
 
         curtime = self.event_loop.get_loop_time()
         if curtime - self.last_update_time > INITIALIZE_TIMEOUT:
@@ -1032,7 +1069,8 @@ class PanelDue:
                         "fileName": self.current_file,
                         "size": self.file_metadata.get('size', 0) or 0,
                         "height": self.file_metadata.get('object_height', 0.0) or 0.0,
-                        "layerHeight": self.file_metadata.get('layer_height', 0.0) or 0.0,
+                        "layerHeight": self.file_metadata.get(
+                            'layer_height', 0.0) or 0.0,
                         "numLayers": self.file_metadata.get('layer_count', 0) or 0,
                         "generatedBy": self.file_metadata.get('slicer', '') or "",
                         "printTime": self.file_metadata.get('estimated_time', 0) or 0,
@@ -1040,8 +1078,12 @@ class PanelDue:
                         "filament": []
                     },
                     "filePosition": int(sd_status.get('file_position', 0)),
-                    "lastFileName": self.last_file_name or p_state.get('print_stats', {}).get('filename', ''),
-                    "layer": int(p_state.get('display_status', {}).get('current_layer', 0)),
+                    "lastFileName": (
+                        self.last_file_name
+                        or p_state.get('print_stats', {}).get('filename', '')
+                    ),
+                    "layer": int(
+                        p_state.get('display_status', {}).get('current_layer', 0)),
                     "duration": round(print_stats.get('print_duration', 0.0), 1),
                     # PanelDue's field table only recognizes job:timesLeft:filament/
                     # file/slicer - "layer" (used elsewhere in this file) is not a
@@ -1141,7 +1183,8 @@ class PanelDue:
 
         # One tool per configured extruder ("extruder", "extruder1", ...),
         # each pointing at its own slot in heat.heaters.
-        extruder_heater_names = sorted(n for n in self.heaters if EXTRUDER_NAME_RE.match(n))
+        extruder_heater_names = sorted(
+            n for n in self.heaters if EXTRUDER_NAME_RE.match(n))
         tools_list: List[Dict[str, Any]] = []
         tools_active: List[float] = []
         tools_standby: List[float] = []
@@ -1162,9 +1205,10 @@ class PanelDue:
 
         toolhead = p_state.get("toolhead", {})
         gcode_move = p_state.get("gcode_move", {})
-        live_pos = p_state.get("motion_report", {}).get('live_position', [0., 0., 0., 0.])
+        live_pos = p_state.get(
+            "motion_report", {}).get('live_position', [0., 0., 0., 0.])
         homed_pos = toolhead.get('homed_axes', "")
-        
+
         sfactor = round(gcode_move.get('speed_factor', 1.) * 100, 2)
         efactor = round(gcode_move.get('extrude_factor', 1.) * 100., 2)
         fan_speed = p_state.get('fan', {}).get('speed', 0.0)
@@ -1184,7 +1228,7 @@ class PanelDue:
         print_stats = p_state.get('print_stats', {})
         fname: str = print_stats.get('filename', "")
         sd_print_state: Optional[str] = print_stats.get('state')
-        
+
         fraction_printed = 0.0
         print_duration = 0.0
         times_left_file = 0.0
@@ -1195,29 +1239,35 @@ class PanelDue:
             if self.current_file != fname:
                 self.current_file = fname
                 self.file_metadata = self.file_manager.get_file_metadata(fname)
-            
+
             progress: float = sd_status.get('progress', 0.0)
             if progress:
                 fraction_printed = round(progress * 100.0, 1)
                 print_duration = round(print_stats.get('print_duration', 0.0), 1)
                 est_time: float = self.file_metadata.get('estimated_time', 0.0)
-                
+
                 if est_time > MIN_EST_TIME:
-                    times_left_file = float(max(0, int(est_time - est_time * progress)))
+                    times_left_file = float(
+                        max(0, int(est_time - est_time * progress)))
                     est_total_fil = self.file_metadata.get('filament_total')
                     if est_total_fil:
                         cur_filament: float = print_stats.get('filament_used', 0.0)
                         fpct = min(1.0, cur_filament / est_total_fil)
-                        times_left_filament = float(max(0, int(est_time - est_time * fpct)))
+                        times_left_filament = float(
+                            max(0, int(est_time - est_time * fpct)))
                 else:
-                    times_left_file = float(max(0, int(print_duration / progress - print_duration)))
-                
+                    times_left_file = float(
+                        max(0, int(print_duration / progress - print_duration)))
+
                 times_left_layer = times_left_file
         else:
             self.current_file = ""
             self.file_metadata = {}
 
-        geom_str = "coreXY" if self.kinematics == "corexy" else (self.kinematics if self.kinematics != "none" else "cartesian")
+        geom_str = (
+            "coreXY" if self.kinematics == "corexy"
+            else (self.kinematics if self.kinematics != "none" else "cartesian")
+        )
 
         # Increment the modern M409 sequence counter with every single transaction
         self.m409_sequence = (self.m409_sequence + 1) & 0xFFFF
@@ -1271,7 +1321,8 @@ class PanelDue:
                          {"letter": "Y", "homed": "y" in homed_pos, "visible": True},
                          {"letter": "Z", "homed": "z" in homed_pos, "visible": True}],
 
-                "currentLayer": int(p_state.get('display_status', {}).get('current_layer', 0)),
+                "currentLayer": int(
+                    p_state.get('display_status', {}).get('current_layer', 0)),
                 "extrRaw": [round(print_stats.get('filament_used', 0.0), 1)],
                 "fractionPrinted": fraction_printed,
                 "filePosition": int(sd_status.get('file_position', 0)),
@@ -1281,9 +1332,13 @@ class PanelDue:
                     "filament": times_left_filament,
                     "layer": times_left_layer
                 },
-                
+
                 "coords": {
-                    "axesHomed": [int("x" in homed_pos), int("y" in homed_pos), int("z" in homed_pos)],
+                    "axesHomed": [
+                        int("x" in homed_pos),
+                        int("y" in homed_pos),
+                        int("z" in homed_pos)
+                    ],
                     "wpl": 1,
                     "xyz": [round(p, 3) for p in live_pos[:3]],
                     "machine": [round(p, 3) for p in live_pos[:3]],
@@ -1300,7 +1355,8 @@ class PanelDue:
                     "speedFactor": round(sfactor, 1),
                     "extrFactors": [round(efactor, 1)],
                     "babystep": babystep_val,
-                    "seq": self.m409_sequence  # FIXED: Send dynamic shifting sequence inside params
+                    # FIXED: Send dynamic shifting sequence inside params
+                    "seq": self.m409_sequence
                 },
                 "sensors": {
                     "probeValue": 0,
@@ -1352,7 +1408,8 @@ class PanelDue:
         # the state key handler above) when this counter changes; leaving it
         # fixed meant PanelDue queried "state" exactly once at connect time
         # and then never learned the status changed away from "idle".
-        if fraction_printed != self.last_fraction_printed or rrf_status != self.last_job_status:
+        if (fraction_printed != self.last_fraction_printed
+                or rrf_status != self.last_job_status):
             self.seqs_job += 1
         if rrf_status != self.last_job_status:
             self.seqs_state += 1
@@ -1454,17 +1511,17 @@ class PanelDue:
                 self.last_printer_state = 'I'
 
         response['status'] = self.last_printer_state
-        
+
         origin_list = gcode_move.get('homing_origin', [0., 0., 0., 0.])
         babystep_val = round(origin_list[2], 3) if len(origin_list) > 2 else 0.0
         response['babystep'] = babystep_val
 
         pos = p_state.get("motion_report", {}).get('live_position', [0., 0., 0., 0.])
         response['pos'] = [round(p, 2) for p in pos[:3]]
-        
+
         homed_pos = toolhead.get('homed_axes', "")
         response['homed'] = [int(a in homed_pos) for a in "xyz"]
-        
+
         sfactor = round(gcode_move.get('speed_factor', 1.) * 100, 2)
         response['sfactor'] = sfactor
 
@@ -1472,12 +1529,12 @@ class PanelDue:
         print_stats = p_state.get('print_stats', {})
         fname: str = print_stats.get('filename', "")
         sd_print_state: Optional[str] = print_stats.get('state')
-        
+
         if sd_print_state in ['printing', 'paused']:
             if self.current_file != fname:
                 self.current_file = fname
                 self.file_metadata = self.file_manager.get_file_metadata(fname)
-            
+
             progress: float = sd_status.get('progress', 0)
             if progress:
                 response['fraction_printed'] = round(progress, 3)
@@ -1489,11 +1546,13 @@ class PanelDue:
                         cur_filament: float = print_stats.get('filament_used', 0.)
                         fpct = min(1., cur_filament / est_total_fil)
                         times_left.append(int(est_time - est_time * fpct))
-                    
+
                     obj_height = self.file_metadata.get('object_height')
                     if obj_height:
-                        gcode_pos_list = gcode_move.get('gcode_position', [0., 0., 0., 0.])
-                        cur_height = gcode_pos_list[2] if len(gcode_pos_list) > 2 else 0.0
+                        gcode_pos_list = gcode_move.get(
+                            'gcode_position', [0., 0., 0., 0.])
+                        cur_height = (
+                            gcode_pos_list[2] if len(gcode_pos_list) > 2 else 0.0)
                         hpct = min(1., cur_height / obj_height)
                         times_left.append(int(est_time - est_time * hpct))
                 else:
@@ -1525,11 +1584,11 @@ class PanelDue:
             htr_state = p_state.get(name, {})
             temp: float = round(htr_state.get('temperature', 0.0), 1)
             target: float = round(htr_state.get('target', 0.0), 1)
-            
+
             response['heaters'].append(temp)
             response['active'].append(target)
             response['standby'].append(target)
-            
+
             if name.startswith('extruder'):
                 a_stat = 2 if name == extruder_name else 1
                 response['hstat'].append(a_stat if target else 0)
@@ -1548,10 +1607,15 @@ class PanelDue:
             if "x" in homed_pos: xyz_mask |= 1
             if "y" in homed_pos: xyz_mask |= 2
             if "z" in homed_pos: xyz_mask |= 4
-            
+
             response.update({
-                "babystep": babystep_val, "tool": response.get('tool', 0), "sfactor": int(sfactor),
-                "xyzFlags": xyz_mask, "geometry": self.kinematics, "volumes": 1, "files": response.get('files', [])
+                "babystep": babystep_val,
+                "tool": response.get('tool', 0),
+                "sfactor": int(sfactor),
+                "xyzFlags": xyz_mask,
+                "geometry": self.kinematics,
+                "volumes": 1,
+                "files": response.get('files', [])
             })
 
         self.write_response(response, line_no=None)
@@ -1568,7 +1632,9 @@ class PanelDue:
             path = path[2:]
         # PanelDue requires first/next/err in addition to dir/files, or it treats
         # the response as failed and shows an empty directory instead of the list.
-        response: Dict[str, Any] = {'dir': path, 'first': arg_r, 'files': [], 'next': 0, 'err': 0}
+        response: Dict[str, Any] = {
+            'dir': path, 'first': arg_r, 'files': [], 'next': 0, 'err': 0
+        }
         if path == "/macros":
             response['files'] = list(self.available_macros.keys())
         else:
