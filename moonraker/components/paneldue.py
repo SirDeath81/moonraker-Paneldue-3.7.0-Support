@@ -243,7 +243,6 @@ class PanelDue:
         server loop."""
         self.serial_task = self.event_loop.create_task(self.run_serial())
 
-#Teil 2
     async def _process_klippy_ready(self) -> None:
         """Handles Klippy initialization and subscribes to required printer
         object states."""
@@ -346,7 +345,6 @@ class PanelDue:
         duration = int(duration * 1000.)
         self.write_response({'beep_freq': frequency, 'beep_length': duration})
 
-#Teil 3
     def process_line(self, line: str) -> None:
         """Processes raw lines from serial, parsing line numbers and
         auto-detecting variant protocols."""
@@ -574,7 +572,6 @@ class PanelDue:
         self.command_queue = []
         self.cq_busy = False
 
-#Teil 4
     def _clean_filename(self, filename: str) -> str:
         """Normalizes Duet/RRF file directory structures to standard Klipper syntax.
 
@@ -966,7 +963,6 @@ class PanelDue:
             return "active"
         return "tuning"
 
-#Teil 5a
     def _compute_times_left(self) -> Dict[str, float]:
         """Computes remaining print time estimates (file/filament) from slicer
         metadata and live progress. Shared by the "job" key handler (the one
@@ -1272,7 +1268,6 @@ class PanelDue:
         # Increment the modern M409 sequence counter with every single transaction
         self.m409_sequence = (self.m409_sequence + 1) & 0xFFFF
 
-#Teil 5b
         # Build deep RRF v3 ObjectModel compatible nested payload structure.
         # Machine-identity fields (name/geometry/firmware/etc.) never change during
         # Send these on every poll, not just the first one. We previously only
@@ -1448,7 +1443,6 @@ class PanelDue:
         }
         self.write_response(response, line_no=None)
 
-#Teil 5c
     def _run_paneldue_M408(self, arg_r: Optional[int] = None, arg_s: int = 1) -> None:
         """Handles legacy M408 status polling queries with enhanced bitmask updates."""
         sequence = arg_r
@@ -1563,7 +1557,6 @@ class PanelDue:
             self.current_file = ""
             self.file_metadata = {}
 
-#Teil 5d
         fan_speed: Optional[float] = p_state.get('fan', {}).get('speed')
         if fan_speed is not None:
             response['fanPercent'] = [round(fan_speed * 100, 1)]
@@ -1604,9 +1597,12 @@ class PanelDue:
 
         if self.detected_variant == "VARIANT_4_MODERN":
             xyz_mask = 0
-            if "x" in homed_pos: xyz_mask |= 1
-            if "y" in homed_pos: xyz_mask |= 2
-            if "z" in homed_pos: xyz_mask |= 4
+            if "x" in homed_pos:
+                xyz_mask |= 1
+            if "y" in homed_pos:
+                xyz_mask |= 2
+            if "z" in homed_pos:
+                xyz_mask |= 4
 
             response.update({
                 "babystep": babystep_val,
