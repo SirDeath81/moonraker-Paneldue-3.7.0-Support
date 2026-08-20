@@ -485,6 +485,7 @@ class PanelDue:
                     params["arg_p"] = p_clean
                     continue
                 arg = p_clean[0].lower()
+                val: Any
                 try:
                     if arg in "sr":
                         val = int(p_clean[1:].strip())
@@ -983,7 +984,7 @@ class PanelDue:
 
         # 0. Handle root model or general capability queries during handshake
         if arg_k == "model" or arg_k == "sensors" or arg_k == "gannt":
-            response = {
+            response: Dict[str, Any] = {
                 "key": arg_k,
                 "flags": arg_f if arg_f is not None else "",
                 "result": {"reply": "ok"}
