@@ -1434,7 +1434,8 @@ class PanelDue:
         status_changed = rrf_status != self.last_job_status
         sensor_edge = self._check_filament_sensor_edge()
         m117_msg: str = p_state.get('display_status', {}).get('message', "")
-        if m117_msg and (m117_msg != self.last_message or status_changed or sensor_edge):
+        msg_changed = m117_msg != self.last_message or status_changed or sensor_edge
+        if m117_msg and msg_changed:
             result_payload["message"] = m117_msg
             self.seqs_reply += 1
         self.last_message = m117_msg
