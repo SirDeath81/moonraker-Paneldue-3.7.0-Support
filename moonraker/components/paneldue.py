@@ -96,6 +96,11 @@ class PanelDue:
         self.extruder_count: int = 0
         self.heaters: List[str] = []
         self.chamber_heaters: List[str] = []
+        # Filament sensors (filament_switch_sensor/filament_motion_sensor).
+        # Their "filament_detected" state is used as an independent signal
+        # to force message redelivery - see _check_filament_sensor_edge().
+        self.filament_sensors: List[str] = []
+        self.filament_sensor_detected: Dict[str, bool] = {}
         self.bed_level_gcode: str = ""
         self.is_ready: bool = False
         self.is_shutdown: bool = False
@@ -298,6 +303,10 @@ class PanelDue:
                 # heater" and reports it via heat.chamberHeaters.
                 self.heaters.append(cfg)
                 self.chamber_heaters.append(cfg)
+                sub_args[cfg] = None
+            elif cfg.startswith("filament_switch_sensor ") or \
+                    cfg.startswith("filament_motion_sensor "):
+                self.filament_sensors.append(cfg)
                 sub_args[cfg] = None
         extruders.sort()
         self.heaters.extend(extruders)
@@ -945,6 +954,30 @@ class PanelDue:
 
         return "idle"
 
+    def _check_filament_sensor_edge(self) -> bool:
+        """Detects whether any configured filament sensor's detected state
+        flipped since the last poll.
+
+        Klipper never clears display_status.message between two identical
+        M117 calls, so a runout macro that re-sends the exact same text on
+        every trigger (remove/reinsert/remove again, or a sensor that isn't
+        wired to PAUSE and so never changes the RRF status either) looked
+        like "no new event" by value comparison alone and the second/third
+        runout silently never reached the panel. The sensor's own
+        filament_detected flag, however, genuinely toggles on every real
+        trigger regardless of what the message text or print status says -
+        use that as an independent, message-text-agnostic signal to force
+        redelivery.
+        """
+        edge = False
+        for name in self.filament_sensors:
+            detected = bool(
+                self.printer_state.get(name, {}).get('filament_detected', True))
+            if self.filament_sensor_detected.get(name) != detected:
+                edge = True
+            self.filament_sensor_detected[name] = detected
+        return edge
+
     @staticmethod
     def _extruder_index(name: str) -> int:
         """Parses the numeric suffix of a Klipper extruder config name:
@@ -1390,8 +1423,18 @@ class PanelDue:
         # based on the DSF/DWC-facing docs and doesn't apply to this standalone
         # serial protocol. The message-box confirmation dialog is delivered
         # separately via the dedicated "state" key handler above.
+        #
+        # Klipper never clears display_status.message between two identical
+        # M117 calls (e.g. a filament-runout macro that always sends the same
+        # text), so comparing only against the last text misses genuine
+        # repeat events - the second runout never got redelivered. Also
+        # redeliver whenever the print status just changed (idle/printing <->
+        # paused etc.), since that's what actually accompanies a new
+        # runout/error condition even when the message text is unchanged.
+        status_changed = rrf_status != self.last_job_status
+        sensor_edge = self._check_filament_sensor_edge()
         m117_msg: str = p_state.get('display_status', {}).get('message', "")
-        if m117_msg and m117_msg != self.last_message:
+        if m117_msg and (m117_msg != self.last_message or status_changed or sensor_edge):
             result_payload["message"] = m117_msg
             self.seqs_reply += 1
         self.last_message = m117_msg
@@ -1403,10 +1446,9 @@ class PanelDue:
         # the state key handler above) when this counter changes; leaving it
         # fixed meant PanelDue queried "state" exactly once at connect time
         # and then never learned the status changed away from "idle".
-        if (fraction_printed != self.last_fraction_printed
-                or rrf_status != self.last_job_status):
+        if fraction_printed != self.last_fraction_printed or status_changed:
             self.seqs_job += 1
-        if rrf_status != self.last_job_status:
+        if status_changed:
             self.seqs_state += 1
         # Same story for seqs.fans - a fan speed change made anywhere other
         # than the panel itself (Mainsail, a macro, the slicer's startup
@@ -1591,7 +1633,8 @@ class PanelDue:
                 response['hstat'].append(2 if target else 0)
 
         msg: str = p_state.get('display_status', {}).get('message', "")
-        if msg and msg != self.last_message:
+        sensor_edge = self._check_filament_sensor_edge()
+        if msg and (msg != self.last_message or sensor_edge):
             response['message'] = msg
         self.last_message = msg
 
