@@ -73,6 +73,18 @@ class PanelDue:
         self.seqs_reply: int = 1
         self.seqs_state: int = 1
         self.seqs_fans: int = 1
+        # Bumped each time _process_klippy_ready (re)discovers the heater/
+        # tool/board configuration. If PanelDue connects and does its initial
+        # M409 discovery poll before Klipper itself is ready, self.heaters/
+        # extruder_count are still empty and the panel builds an empty
+        # control screen (no nozzle/bed/macro widgets) - since these seqs
+        # were previously hardcoded to a constant 1, the panel had no signal
+        # that the model changed once Klipper actually came online and never
+        # rebuilt the screen, requiring a manual PanelDue reset to reconnect
+        # after the printer was already up.
+        self.seqs_heat: int = 1
+        self.seqs_tools: int = 1
+        self.seqs_boards: int = 1
         self.last_fan_speed: float = -1.0
         self.enable_checksum = config.getboolean('enable_checksum', True)
         self.debug_queue: Deque[str] = deque(maxlen=100)
@@ -337,6 +349,12 @@ class PanelDue:
             logging.exception("Unable to complete subscription request")
         self.is_shutdown = False
         self.is_ready = True
+        # Tell an already-connected panel its cached heater/tool/board model
+        # is stale and must be re-fetched, in case it discovered an empty
+        # model earlier (e.g. it connected while Klipper was still starting).
+        self.seqs_heat += 1
+        self.seqs_tools += 1
+        self.seqs_boards += 1
 
     def _process_klippy_shutdown(self) -> None:
         """Handles emergency shutdown states from Klippy."""
@@ -1464,11 +1482,11 @@ class PanelDue:
         result_payload["seqs"] = {
             "state": self.seqs_state,
             "network": 1,
-            "boards": 1,
+            "boards": self.seqs_boards,
             "job": self.seqs_job,
             "move": 1,
-            "heat": 1,
-            "tools": 1,
+            "heat": self.seqs_heat,
+            "tools": self.seqs_tools,
             "volumes": 1,
             "fans": self.seqs_fans,
             "reply": self.seqs_reply
