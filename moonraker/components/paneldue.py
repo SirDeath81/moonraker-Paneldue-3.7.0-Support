@@ -171,6 +171,8 @@ class PanelDue:
             "server:gcode_response", self.handle_gcode_response)
         self.server.register_remote_method("paneldue_beep", self.paneldue_beep)
 
+        # These commands are directly executed on the server and do not to
+        # make a request to Klippy
         # Map directly handled G-codes to their respective callbacks
         self.direct_gcodes: Dict[str, FlexCallback] = {
             'M20': self._run_paneldue_M20,
@@ -180,6 +182,8 @@ class PanelDue:
             'M409': self._run_paneldue_M409,
         }
 
+        # These gcodes require special parsing or handling prior to being
+        # sent via Klippy's "gcode/script" api command.
         # Map special G-codes with flexible arguments to Klipper macros
         self.special_gcodes: Dict[str, Callable[[List[str]], str]] = {
             'M0': lambda args: "CANCEL_PRINT",
@@ -263,6 +267,7 @@ class PanelDue:
     async def _process_klippy_ready(self) -> None:
         """Handles Klippy initialization and subscribes to required printer
         object states."""
+        # Request "info" and "configfile" status
         retries = 10
         printer_info: Dict[str, Any] = {}
         cfg_status: Dict[str, Any] = {}
@@ -284,6 +289,7 @@ class PanelDue:
         printer_cfg: Dict[str, Any] = config.get('printer', {})
         self.kinematics = printer_cfg.get('kinematics', "none")
 
+        # Make subscription request
         sub_args: Dict[str, Optional[List[str]]] = {
             "motion_report": None,
             "gcode_move": None,
@@ -362,6 +368,7 @@ class PanelDue:
 
     def _process_klippy_disconnect(self) -> None:
         """Resets panel state on Klippy disconnect."""
+        # Tell the PD that the printer is "off"
         self.write_response({'status': 'O'})
         self.last_printer_state = 'O'
         self.is_ready = False
@@ -379,6 +386,7 @@ class PanelDue:
             logging.info(f"PanelDue RAW INPUT: {line.strip()}")
         self.debug_queue.append(line)
 
+        # If we find M112 in the line then skip verification
         if "M112" in line.upper():
             self.event_loop.register_callback(self.klippy_apis.emergency_stop)
             return
@@ -388,6 +396,7 @@ class PanelDue:
         script = line
 
         if self.enable_checksum:
+            # Get line number
             if line.startswith('N'):
                 line_index = line.find(' ')
                 try:
@@ -397,6 +406,7 @@ class PanelDue:
                     line_index = -1
                     line_no = None
 
+            # Verify checksum
             cs_index = line.rfind('*')
             if cs_index == -1:
                 return
@@ -478,6 +488,8 @@ class PanelDue:
         # single line).
         # Klipper only ever executes the first command on a line, so split any chained
         # line into individual commands before dispatching each one in order.
+        # Execute the gcode.  Check for special RRF gcodes that
+        # require special handling
         for sub_script in self._split_chained_commands(script):
             self._dispatch_single_command(sub_script)
 
@@ -520,6 +532,7 @@ class PanelDue:
             if arg:
                 parts = [cmd, arg]
 
+        # Check for commands that query state and require immediate response
         if cmd in self.direct_gcodes:
             params: Dict[str, Any] = {}
             for p in parts[1:]:
@@ -549,6 +562,7 @@ class PanelDue:
             self.queue_command(func, **params)
             return
 
+        # Prepare GCodes that require special handling
         if cmd in self.special_gcodes:
             sgc_func = self.special_gcodes[cmd]
             script = sgc_func(parts[1:])
@@ -608,6 +622,7 @@ class PanelDue:
         instead - so the result here must always be a relative path.
         """
         filename = filename.strip(" \"\t\n")
+        # Remove drive number
         if filename.startswith("0:/"):
             filename = filename[3:]
         if filename.startswith("/gcodes/"):
@@ -642,6 +657,7 @@ class PanelDue:
             raw_arg = raw_arg.replace("{job.lastFileName}", last_name)
         filename = self._clean_filename(raw_arg)
         self.last_file_name = filename
+        # Escape existing double quotes in the file name
         filename = filename.replace("\"", "\\\"")
         return f"SDCARD_PRINT_FILE FILENAME=\"{filename}\""
 
@@ -713,6 +729,7 @@ class PanelDue:
         return ""
 
     def _prepare_M290(self, args: List[str]) -> str:
+        # args should in in the format Z0.02
         offset = args[0][1:].strip()
         return f"SET_GCODE_OFFSET Z_ADJUST={offset} MOVE=1"
 
@@ -1527,11 +1544,13 @@ class PanelDue:
             return
 
         if sequence is not None and self.last_gcode_response:
+            # Send gcode responses
             response['seq'] = sequence + 1
             response['resp'] = self.last_gcode_response
             self.last_gcode_response = None
 
         if response_type == 1:
+            # Extended response Request
             response['myName'] = self.machine_name
             response['firmwareName'] = self.firmware_name
             response['numTools'] = self.extruder_count
@@ -1580,28 +1599,34 @@ class PanelDue:
         sfactor = round(gcode_move.get('speed_factor', 1.) * 100, 2)
         response['sfactor'] = sfactor
 
+        # Print Progress Tracking
         sd_status = p_state.get('virtual_sdcard', {})
         print_stats = p_state.get('print_stats', {})
         fname: str = print_stats.get('filename', "")
         sd_print_state: Optional[str] = print_stats.get('state')
 
         if sd_print_state in ['printing', 'paused']:
+            # We know a file has been loaded, initialize metadata
             if self.current_file != fname:
                 self.current_file = fname
                 self.file_metadata = self.file_manager.get_file_metadata(fname)
 
             progress: float = sd_status.get('progress', 0)
+            # progress and print tracking
             if progress:
                 response['fraction_printed'] = round(progress, 3)
                 est_time: float = self.file_metadata.get('estimated_time', 0)
                 if est_time > MIN_EST_TIME:
+                    # file read estimate
                     times_left = [int(est_time - est_time * progress)]
+                    # filament estimate
                     est_total_fil = self.file_metadata.get('filament_total')
                     if est_total_fil:
                         cur_filament: float = print_stats.get('filament_used', 0.)
                         fpct = min(1., cur_filament / est_total_fil)
                         times_left.append(int(est_time - est_time * fpct))
 
+                    # object height estimate
                     obj_height = self.file_metadata.get('object_height')
                     if obj_height:
                         gcode_pos_list = gcode_move.get(
@@ -1611,10 +1636,13 @@ class PanelDue:
                         hpct = min(1., cur_height / obj_height)
                         times_left.append(int(est_time - est_time * hpct))
                 else:
+                    # The estimated time is not in the metadata, however we
+                    # can still provide an estimate based on file progress
                     duration: float = print_stats.get('print_duration', 0.)
                     times_left = [int(duration / progress - duration)]
                 response['timesLeft'] = times_left
         else:
+            # clear filename and metadata
             self.current_file = ""
             self.file_metadata = {}
 
@@ -1626,6 +1654,7 @@ class PanelDue:
         if self.extruder_count > 0 and extruder_name:
             response['tool'] = self._extruder_index(extruder_name)
 
+        # Report Heater Status
         efactor: float = round(gcode_move.get('extrude_factor', 1.) * 100., 2)
         response['heaters'] = []
         response['active'] = []
@@ -1651,10 +1680,14 @@ class PanelDue:
             else:
                 response['hstat'].append(2 if target else 0)
 
+        # Display message (via M117)
         msg: str = p_state.get('display_status', {}).get('message', "")
         sensor_edge = self._check_filament_sensor_edge()
         if msg and (msg != self.last_message or sensor_edge):
             response['message'] = msg
+        # Remember the message so it only shows once.  The paneldue
+        # is strange about this, and displays it as a full screen
+        # notification
         self.last_message = msg
 
         if self.detected_variant == "VARIANT_4_MODERN":
@@ -1685,7 +1718,11 @@ class PanelDue:
             logging.info(f"Cannot process response type {response_type} in M20")
             return
         path = arg_p
+        # Strip quotes if they exist
         path = path.strip('\"')
+        # Path should come in as "0:/macros, or 0:/<gcode_folder>".  With
+        # repetier compatibility enabled, the default folder is root,
+        # ie. "0:/"
         if path.startswith("0:/"):
             path = path[2:]
         # PanelDue requires first/next/err in addition to dir/files, or it treats
@@ -1696,6 +1733,12 @@ class PanelDue:
         if path == "/macros":
             response['files'] = list(self.available_macros.keys())
         else:
+            # HACK: The PanelDue has a bug where it does not correctly detect
+            # subdirectories if we return the root as "/".  Moonraker can
+            # support a "gcodes" directory, however we must choose between this
+            # support or disabling RRF specific gcodes (this is done by
+            # identifying as Repetier).  The workaround below converts both
+            # "/" and "/gcodes" paths to "gcodes".
             if path == "/":
                 response['dir'] = "/gcodes"
                 path = "gcodes"
@@ -1713,6 +1756,8 @@ class PanelDue:
 
     async def _run_paneldue_M30(self, arg_p: str = "") -> None:
         """Deletes a selected G-code file through Moonraker file manager."""
+        # Delete a file.  Clean up the file name and make sure
+        # it is relative to the "gcodes" root.
         path = arg_p
         path = path.strip('\"')
         if path.startswith("0:/"):
@@ -1730,11 +1775,14 @@ class PanelDue:
         sd_status = self.printer_state.get('virtual_sdcard', {})
         print_stats = self.printer_state.get('print_stats', {})
         if filename is None:
+            # PanelDue is requesting file information on a
+            # currently printed file
             active = False
             if sd_status and print_stats:
                 filename = print_stats['filename']
                 active = sd_status['is_active']
             if not filename or not active:
+                # Either no file printing or no virtual_sdcard
                 response['err'] = 1
                 self.write_response(response)
                 return
@@ -1754,6 +1802,7 @@ class PanelDue:
         if metadata:
             response['err'] = 0
             response['size'] = metadata['size']
+            # workaround for PanelDue replacing the first "T" found
             response['lastModified'] = "T" + time.ctime(metadata['modified'])
             slicer: Optional[str] = metadata.get('slicer')
             if slicer is not None:
