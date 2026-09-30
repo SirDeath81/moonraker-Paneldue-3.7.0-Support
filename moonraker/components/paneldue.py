@@ -1594,7 +1594,7 @@ class PanelDue:
         if not self.is_ready:
             self.last_printer_state = 'O'
             response['status'] = self.last_printer_state
-            self.write_response(response, line_no=None)
+            self.write_response(response)
             return
 
         if sequence is not None and self.last_gcode_response:
@@ -1742,7 +1742,7 @@ class PanelDue:
                 "files": response.get('files', [])
             })
 
-        self.write_response(response, line_no=None)
+        self.write_response(response)
 
     def _run_paneldue_M20(self, arg_p: str, arg_s: int = 0, arg_r: int = 0) -> None:
         """Lists available print files or virtual macro directories."""
@@ -1857,7 +1857,7 @@ class PanelDue:
                 response['printTime'] = int(est_time + .5)
         else:
             response['err'] = 1
-        self.write_response(response, line_no=None)
+        self.write_response(response)
 
     async def close(self) -> None:
         """Closes async serial port transport resources on component destruction."""
