@@ -934,7 +934,10 @@ class PanelDue:
             self.write_response(mbox)
 
     def handle_gcode_response(self, response: str) -> None:
-        if "Klipper state" in response or response.startswith('!!'):
+        # Only queue up "non-trivial" gcode responses.  At the
+        # moment we'll handle state changes and errors
+        if "Klipper state" in response \
+                or response.startswith('!!'):
             self.last_gcode_response = response
         else:
             for key in self.non_trivial_keys:
@@ -979,6 +982,36 @@ class PanelDue:
             self.ser_conn.send(final_line.encode('utf-8'))
         except Exception:
             logging.exception("PanelDue: Error writing response to serial transport")
+
+    def _get_printer_status(self) -> str:
+        # PanelDue States applicable to Klipper:
+        # I = idle, P = printing from SD, S = stopped (shutdown),
+        # C = starting up (not ready), A = paused, D = pausing,
+        # B = busy
+        if self.is_shutdown:
+            return 'S'
+
+        p_state = self.printer_state
+        sd_state: str
+        sd_state = p_state.get("print_stats", {}).get("state", "standby")
+        if sd_state == "printing":
+            if self.last_printer_state == 'A':
+                # Resuming
+                return 'R'
+            # Printing
+            return 'P'
+        elif sd_state == "paused":
+            p_active = (
+                p_state.get("idle_timeout", {}).get("state", 'Idle') == "Printing"
+            )
+            if p_active and self.last_printer_state != 'A':
+                # Pausing
+                return 'D'
+            else:
+                # Paused
+                return 'A'
+
+        return 'I'
 
     def _get_rrf_printer_status(self) -> str:
         """Translates Klipper print stats into standard RRF Object Model status strings.
@@ -1582,29 +1615,7 @@ class PanelDue:
         toolhead = p_state.get("toolhead", {})
         gcode_move = p_state.get("gcode_move", {})
 
-        # PanelDue States applicable to Klipper:
-        # I = idle, P = printing from SD, S = stopped (shutdown),
-        # C = starting up (not ready), A = paused, D = pausing,
-        # R = resuming, B = busy
-        if self.is_shutdown:
-            self.last_printer_state = 'S'
-        else:
-            sd_state = p_state.get("print_stats", {}).get("state", "standby")
-            if sd_state == "printing":
-                # One-shot transitional state: only report Resuming on the
-                # very poll where we notice we've left Paused, not every poll.
-                self.last_printer_state = 'R' if self.last_printer_state == 'A' else 'P'
-            elif sd_state == "paused":
-                p_active = (
-                    p_state.get("idle_timeout", {}).get("state", 'Idle') == "Printing"
-                )
-                if p_active and self.last_printer_state != 'A':
-                    self.last_printer_state = 'D'
-                else:
-                    self.last_printer_state = 'A'
-            else:
-                self.last_printer_state = 'I'
-
+        self.last_printer_state = self._get_printer_status()
         response['status'] = self.last_printer_state
 
         origin_list = gcode_move.get('homing_origin', [0., 0., 0., 0.])
