@@ -1622,12 +1622,14 @@ class PanelDue:
         babystep_val = round(origin_list[2], 3) if len(origin_list) > 2 else 0.0
         response['babystep'] = babystep_val
 
+        # Current position
+        pos: List[float]
+        homed_pos: str
+        sfactor: float
         pos = p_state.get("motion_report", {}).get('live_position', [0., 0., 0., 0.])
         response['pos'] = [round(p, 2) for p in pos[:3]]
-
         homed_pos = toolhead.get('homed_axes', "")
         response['homed'] = [int(a in homed_pos) for a in "xyz"]
-
         sfactor = round(gcode_move.get('speed_factor', 1.) * 100, 2)
         response['sfactor'] = sfactor
 
