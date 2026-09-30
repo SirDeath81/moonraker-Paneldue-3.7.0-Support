@@ -178,9 +178,9 @@ class PanelDue:
         )
         self.server.register_remote_method("paneldue_beep", self.paneldue_beep)
 
-        # These commands are directly executed on the server and do not to
-        # make a request to Klippy
-        # Map directly handled G-codes to their respective callbacks
+        # Map directly handled G-codes to their respective callbacks. These
+        # commands are directly executed on the server and do not to make a
+        # request to Klippy
         self.direct_gcodes: Dict[str, FlexCallback] = {
             'M20': self._run_paneldue_M20,
             'M30': self._run_paneldue_M30,
@@ -189,9 +189,9 @@ class PanelDue:
             'M409': self._run_paneldue_M409,
         }
 
-        # These gcodes require special parsing or handling prior to being
-        # sent via Klippy's "gcode/script" api command.
-        # Map special G-codes with flexible arguments to Klipper macros
+        # Map special G-codes with flexible arguments to Klipper macros. These
+        # gcodes require special parsing or handling prior to being sent via
+        # Klippy's "gcode/script" api command.
         self.special_gcodes: Dict[str, Callable[[List[str]], str]] = {
             'M0': lambda args: "CANCEL_PRINT",
             'M23': self._prepare_M23,
@@ -294,6 +294,12 @@ class PanelDue:
         config: Dict[str, Any] = cfg_status.get('configfile', {}).get('config', {})
         printer_cfg: Dict[str, Any] = config.get('printer', {})
         self.kinematics = printer_cfg.get('kinematics', "none")
+
+        logging.info(
+            f"PanelDue Config Received:\n"
+            f"Firmware Name: {self.firmware_name}\n"
+            f"Kinematics: {self.kinematics}\n"
+            f"Printer Config: {config}\n")
 
         # Make subscription request
         sub_args: Dict[str, Optional[List[str]]] = {
