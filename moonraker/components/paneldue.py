@@ -468,7 +468,7 @@ class PanelDue:
                 logging.info(f"PanelDue: Protocol variant detected -> {variant}")
 
             if variant == "UNKNOWN":
-                msg = "!! Checksum Mismatch"
+                msg = "!! Invalid Checksum"
                 if line_no is not None:
                     msg += f" Line Number: {line_no}"
                 logging.info(f"PanelDue: {msg} - Raw line: {line}")
@@ -557,7 +557,9 @@ class PanelDue:
                 p_clean = p.strip(" \"\t\n'")
                 if not p_clean:
                     continue
-                if p_clean[0].upper() not in "PSRKPF":
+                # A quoted token is always a path/filename argument, never a
+                # letter parameter, even if the name starts with P/S/R/K/F.
+                if p[0] in "\"'" or p_clean[0].upper() not in "PSRKPF":
                     params["arg_p"] = p_clean
                     continue
                 arg = p_clean[0].lower()
