@@ -1746,8 +1746,10 @@ class PanelDue:
                 f"Cannot process response type {response_type} in M20")
             return
         path = arg_p
+
         # Strip quotes if they exist
         path = path.strip('\"')
+
         # Path should come in as "0:/macros, or 0:/<gcode_folder>".  With
         # repetier compatibility enabled, the default folder is root,
         # ie. "0:/"
@@ -1758,6 +1760,7 @@ class PanelDue:
         response: Dict[str, Any] = {
             'dir': path, 'first': arg_r, 'files': [], 'next': 0, 'err': 0
         }
+
         if path == "/macros":
             response['files'] = list(self.available_macros.keys())
         else:
@@ -1765,8 +1768,9 @@ class PanelDue:
             # subdirectories if we return the root as "/".  Moonraker can
             # support a "gcodes" directory, however we must choose between this
             # support or disabling RRF specific gcodes (this is done by
-            # identifying as Repetier).  The workaround below converts both
-            # "/" and "/gcodes" paths to "gcodes".
+            # identifying as Repetier).
+            # The workaround below converts both "/" and "/gcodes" paths to
+            # "gcodes".
             if path == "/":
                 response['dir'] = "/gcodes"
                 path = "gcodes"
