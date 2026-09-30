@@ -428,7 +428,12 @@ class PanelDue:
             try:
                 received_checksum = int(checksum_str)
             except Exception:
-                raise PanelDueError("!! Invalid Checksum Format")
+                # Invalid checksum, do not process
+                msg = "!! Invalid Checksum"
+                if line_no is not None:
+                    msg += f" Line Number: {line_no}"
+                logging.exception("PanelDue: " + msg)
+                raise PanelDueError(msg)
 
             payload = line[:cs_index].strip()
             script = line[line_index+1:cs_index].strip()
