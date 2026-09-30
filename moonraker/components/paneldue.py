@@ -93,6 +93,7 @@ class PanelDue:
         # Protocol auto-detection variants
         self.detected_variant: str = "UNKNOWN"
         self.current_line_no: Optional[int] = None
+        self.m409_sequence: int = 0  # Dynamic sequence counter tracking
 
         # Emulation cache for heater states
         self.bed_active_target: float = 0.0
@@ -102,7 +103,7 @@ class PanelDue:
         # Counter for streaming macros safely during initialization phase
         self.init_macro_counter: int = 0
 
-        # Initialize printer subscription cache state tracking
+        # Initialize tracked state.
         kconn: KlippyConnection = self.server.lookup_component("klippy_connection")
         self.printer_state: Dict[str, Dict[str, Any]] = kconn.get_subscription_cache()
         self.extruder_count: int = 0
@@ -124,23 +125,24 @@ class PanelDue:
         self.last_printer_state: str = 'O'
         self.last_update_time: float = 0.
 
-        # Macro and macro configuration dialog definitions
+        # Set up macros
         self.confirmed_gcode: str = ""
         self.confirmed_macro_name: str = ""
         self.mbox_sequence: int = 0
         self.pending_msgbox: Optional[Dict[str, Any]] = None
-        self.m409_sequence: int = 0  # Dynamic sequence counter tracking
         self.available_macros: Dict[str, str] = {}
         self.confirmed_macros = {
             "RESTART": "RESTART",
-            "FIRMWARE_RESTART": "FIRMWARE_RESTART"
-        }
-
+            "FIRMWARE_RESTART": "FIRMWARE_RESTART"}
         macros = config.getlist('macros', None)
         if macros is not None:
+            # The macro's configuration name is the key, whereas the full
+            # command is the value
             self.available_macros = {m.split()[0]: m for m in macros if m.strip()}
         conf_macros = config.getlist('confirmed_macros', None)
         if conf_macros is not None:
+            # The macro's configuration name is the key, whereas the full
+            # command is the value
             self.confirmed_macros = {m.split()[0]: m for m in conf_macros if m.strip()}
         self.available_macros.update(self.confirmed_macros)
         self.non_trivial_keys = config.getlist('non_trivial_keys', ["Klipper state"])
@@ -159,16 +161,21 @@ class PanelDue:
         # correctly - not a repeating debug trace.
         self.verbose_logging = config.getboolean('verbose_logging', False)
         self.ser_conn = async_serial.AsyncSerialConnection.from_config(config)
+        logging.info("PanelDue Configured")
 
-        # Register server event handlers
+        # Register server events
         self.server.register_event_handler(
-            "server:klippy_ready", self._process_klippy_ready)
+            "server:klippy_ready", self._process_klippy_ready
+        )
         self.server.register_event_handler(
-            "server:klippy_shutdown", self._process_klippy_shutdown)
+            "server:klippy_shutdown", self._process_klippy_shutdown
+        )
         self.server.register_event_handler(
-            "server:klippy_disconnect", self._process_klippy_disconnect)
+            "server:klippy_disconnect", self._process_klippy_disconnect
+        )
         self.server.register_event_handler(
-            "server:gcode_response", self.handle_gcode_response)
+            "server:gcode_response", self.handle_gcode_response
+        )
         self.server.register_remote_method("paneldue_beep", self.paneldue_beep)
 
         # These commands are directly executed on the server and do not to
@@ -205,7 +212,6 @@ class PanelDue:
             'G32': self._prepare_G32,
             'T-1': lambda args: ""
         }
-        logging.info("PanelDue Component Configured")
 
     def calc_xor8(self, payload: str) -> int:
         """Calculates the standard 8-bit XOR checksum used by RRF."""
@@ -377,7 +383,8 @@ class PanelDue:
     def paneldue_beep(self, frequency: int, duration: float) -> None:
         """Sends a hardware beep signal descriptor command packet to the panel."""
         duration = int(duration * 1000.)
-        self.write_response({'beep_freq': frequency, 'beep_length': duration})
+        self.write_response(
+            {'beep_freq': frequency, 'beep_length': duration})
 
     def process_line(self, line: str) -> None:
         """Processes raw lines from serial, parsing line numbers and
@@ -1622,7 +1629,8 @@ class PanelDue:
                     # filament estimate
                     est_total_fil = self.file_metadata.get('filament_total')
                     if est_total_fil:
-                        cur_filament: float = print_stats.get('filament_used', 0.)
+                        cur_filament: float = print_stats.get(
+                            'filament_used', 0.)
                         fpct = min(1., cur_filament / est_total_fil)
                         times_left.append(int(est_time - est_time * fpct))
 
@@ -1715,7 +1723,8 @@ class PanelDue:
         """Lists available print files or virtual macro directories."""
         response_type = arg_s
         if response_type != 2:
-            logging.info(f"Cannot process response type {response_type} in M20")
+            logging.info(
+                f"Cannot process response type {response_type} in M20")
             return
         path = arg_p
         # Strip quotes if they exist
