@@ -634,22 +634,22 @@ class PanelDue:
         self.cq_busy = False
 
     def _clean_filename(self, filename: str) -> str:
-        """Normalizes Duet/RRF file directory structures to standard Klipper syntax.
-
-        Klipper's virtual_sdcard joins this value onto its own configured root
-        directory via os.path.join(). A leading '/' would make that join discard
-        the configured root entirely and resolve against the filesystem root
-        instead - so the result here must always be a relative path.
-        """
+        """Normalizes Duet/RRF file directory structures to standard Klipper syntax."""
+        # Remove quotes and whitespace
         filename = filename.strip(" \"\t\n")
         # Remove drive number
         if filename.startswith("0:/"):
             filename = filename[3:]
-        if filename.startswith("/gcodes/"):
-            filename = filename[len("/gcodes/"):]
-        elif filename.startswith("gcodes/"):
-            filename = filename[len("gcodes/"):]
-        filename = filename.lstrip("/")
+        # Remove initial "gcodes" folder.  This is necessary
+        # due to the HACK in the paneldue_M20 gcode.
+        if filename.startswith("gcodes/"):
+            filename = filename[6:]
+        elif filename.startswith("/gcodes/"):
+            filename = filename[7:]
+        # Start with a "/" so the gcode parser can correctly
+        # handle files that begin with digits or special chars
+        if filename[0] != "/":
+            filename = "/" + filename
         return filename
 
     def _prepare_M23(self, args: List[str]) -> str:
