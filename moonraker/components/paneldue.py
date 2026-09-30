@@ -384,7 +384,7 @@ class PanelDue:
         self.write_response({'status': 'O'})
         self.last_printer_state = 'O'
         self.is_ready = False
-        self.is_shutdown = False
+        self.is_shutdown = self.is_shutdown = False
 
     def paneldue_beep(self, frequency: int, duration: float) -> None:
         """Sends a hardware beep signal descriptor command packet to the panel."""
