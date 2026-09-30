@@ -1794,8 +1794,9 @@ class PanelDue:
         path = path.strip('\"')
         if path.startswith("0:/"):
             path = path[3:]
-        elif path.startswith("/"):
+        elif path[0] == "/":
             path = path[1:]
+
         if not path.startswith("gcodes/"):
             path = "gcodes/" + path
         await self.file_manager.delete_file(path)
@@ -1821,7 +1822,11 @@ class PanelDue:
             else:
                 response['fileName'] = filename.split("/")[-1]
 
-        if filename.startswith("/"):
+        # For consistency make sure that the filename begins with the
+        # "gcodes/" root.  The M20 HACK should add this in some cases.
+        # Ideally we would add support to the PanelDue firmware that
+        # indicates Moonraker supports a "gcodes" directory.
+        if filename[0] == "/":
             filename = filename[1:]
         if not filename.startswith("gcodes/"):
             filename = "gcodes/" + filename
