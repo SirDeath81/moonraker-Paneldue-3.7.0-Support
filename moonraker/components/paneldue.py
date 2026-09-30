@@ -1691,38 +1691,30 @@ class PanelDue:
 
         # Report Heater Status
         efactor: float = round(gcode_move.get('extrude_factor', 1.) * 100., 2)
-        response['heaters'] = []
-        response['active'] = []
-        response['standby'] = []
-        response['hstat'] = []
-        response['efactor'] = []
-        response['extr'] = []
 
         for name in self.heaters:
             htr_state = p_state.get(name, {})
             temp: float = round(htr_state.get('temperature', 0.0), 1)
             target: float = round(htr_state.get('target', 0.0), 1)
-
-            response['heaters'].append(temp)
-            response['active'].append(target)
-            response['standby'].append(target)
-
+            response.setdefault('heaters', []).append(temp)
+            response.setdefault('active', []).append(target)
+            response.setdefault('standby', []).append(target)
             if name.startswith('extruder'):
                 a_stat = 2 if name == extruder_name else 1
-                response['hstat'].append(a_stat if target else 0)
-                response['efactor'].append(int(efactor))
-                response['extr'].append(round(pos[3] if len(pos) > 3 else 0.0, 2))
+                response.setdefault('hstat', []).append(a_stat if target else 0)
+                response.setdefault('efactor', []).append(efactor)
+                response.setdefault('extr', []).append(round(pos[3], 2))
             else:
-                response['hstat'].append(2 if target else 0)
+                response.setdefault('hstat', []).append(2 if target else 0)
 
         # Display message (via M117)
         msg: str = p_state.get('display_status', {}).get('message', "")
         sensor_edge = self._check_filament_sensor_edge()
         if msg and (msg != self.last_message or sensor_edge):
             response['message'] = msg
-        # Remember the message so it only shows once.  The paneldue
-        # is strange about this, and displays it as a full screen
-        # notification
+            # reset the message so it only shows once.  The paneldue
+            # is strange about this, and displays it as a full screen
+            # notification
         self.last_message = msg
 
         if self.detected_variant == "VARIANT_4_MODERN":
