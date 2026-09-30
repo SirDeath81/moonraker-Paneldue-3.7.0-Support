@@ -930,6 +930,7 @@ class PanelDue:
                 'msgBox.controls': 0,
                 'msgBox.timeout': 0
             }
+            logging.debug(f"Creating PanelDue Confirmation: {mbox}")
             self.write_response(mbox)
 
     def handle_gcode_response(self, response: str) -> None:
