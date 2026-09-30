@@ -1654,20 +1654,20 @@ class PanelDue:
                     # file read estimate
                     times_left = [int(est_time - est_time * progress)]
                     # filament estimate
+                    est_total_fil: Optional[float]
                     est_total_fil = self.file_metadata.get('filament_total')
                     if est_total_fil:
                         cur_filament: float = print_stats.get(
                             'filament_used', 0.)
                         fpct = min(1., cur_filament / est_total_fil)
                         times_left.append(int(est_time - est_time * fpct))
-
                     # object height estimate
+                    obj_height: Optional[float]
                     obj_height = self.file_metadata.get('object_height')
                     if obj_height:
-                        gcode_pos_list = gcode_move.get(
-                            'gcode_position', [0., 0., 0., 0.])
-                        cur_height = (
-                            gcode_pos_list[2] if len(gcode_pos_list) > 2 else 0.0)
+                        cur_height: float = gcode_move.get(
+                            'gcode_position', [0., 0., 0., 0.]
+                        )[2]
                         hpct = min(1., cur_height / obj_height)
                         times_left.append(int(est_time - est_time * hpct))
                 else:
